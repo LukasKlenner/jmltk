@@ -13,6 +13,7 @@ import com.github.javaparser.ast.jml.clauses.*;
 import com.github.javaparser.ast.jml.doc.*;
 import com.github.javaparser.ast.jml.doc.JmlDoc;
 import com.github.javaparser.ast.jml.expr.*;
+import com.github.javaparser.ast.jml.proof.*;
 import com.github.javaparser.ast.jml.stmt.*;
 import com.github.javaparser.ast.key.*;
 import com.github.javaparser.ast.key.sv.*;
@@ -1118,6 +1119,9 @@ public class PrettyPrintVisitor implements VoidVisitor<Void> {
         }
         printer.print(";\n");
     }
+
+    @Override
+    public void visit(JmlProofObtainStmt n, Void arg) {}
 
     @Override
     public void visit(final RecordPatternExpr n, final Void arg) {
@@ -2338,6 +2342,15 @@ public class PrettyPrintVisitor implements VoidVisitor<Void> {
 
     @Override
     public void visit(JmlLabelStmt n, Void arg) {}
+
+    @Override
+    public void visit(JmlProofCmdStmt n, Void arg) {}
+
+    @Override
+    public void visit(JmlProofArg n, Void arg) {}
+
+    @Override
+    public void visit(JmlProofCaseStmt n, Void arg) {}
 
     @Override
     public void visit(JmlMethodSignature n, Void arg) {}

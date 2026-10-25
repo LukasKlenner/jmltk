@@ -16,6 +16,7 @@ import com.github.javaparser.ast.jml.doc.JmlDocDeclaration;
 import com.github.javaparser.ast.jml.doc.JmlDocStmt;
 import com.github.javaparser.ast.jml.doc.JmlDocType;
 import com.github.javaparser.ast.jml.expr.*;
+import com.github.javaparser.ast.jml.proof.*;
 import com.github.javaparser.ast.jml.stmt.*;
 import com.github.javaparser.ast.key.*;
 import com.github.javaparser.ast.key.sv.*;
@@ -84,7 +85,7 @@ public class DefaultPrettyPrinterVisitor implements VoidVisitor<Void> {
 
     /**
      * Print a list of modifiers on a declaration.
-     *
+     * <p>
      * By default, this simply outputs the string representations of the modifiers separated by spaces.
      */
     protected void printModifiers(final NodeList<Modifier> modifiers) {
@@ -105,7 +106,7 @@ public class DefaultPrettyPrinterVisitor implements VoidVisitor<Void> {
 
     /**
      * Print a list of body declarations.
-     *
+     * <p>
      * By default, this outputs declarations surrounded with a newline before and after.
      */
     protected void printMembers(final NodeList<BodyDeclaration<?>> members, final Void arg) {
@@ -952,12 +953,49 @@ public class DefaultPrettyPrinterVisitor implements VoidVisitor<Void> {
 
     @Override
     public void visit(JmlExpressionStmt n, Void arg) {
-        wrapInJmlIfNeeded(() -> {
+        wrapInJmlIfNeededBlock(n.getJmlTags(), () -> {
             printer.print(n.getKind().jmlSymbol());
             printer.print(" ");
             n.getExpression().accept(this, arg);
+            n.getScript().ifPresent(this::printSuffix);
             printer.print(";");
         });
+    }
+
+    @Override
+    public void visit(JmlProofCmdStmt n, Void arg) {
+        printOrphanCommentsBeforeThisChildNode(n);
+        n.getName().accept(this, arg);
+        if (!n.getArgs().isEmpty()) {
+            printer.print(" ");
+            printList(n.getArgs(), " ");
+        }
+        printSuffix(n.getSuffix());
+    }
+
+    @Override
+    public void visit(JmlProofArg n, Void arg) {
+        printOrphanCommentsBeforeThisChildNode(n);
+        n.getLabel().ifPresent(it -> {
+            it.accept(this, arg);
+            printer.print(": ");
+        });
+        n.getExpr().accept(this, arg);
+    }
+
+    @Override
+    public void visit(JmlProofCaseStmt n, Void arg) {
+        printOrphanCommentsBeforeThisChildNode(n);
+        n.getLabel()
+                .ifPresentOrElse(
+                        label -> {
+                            printer.print("case ");
+                            label.accept(this, arg);
+                            printer.print(": ");
+                        },
+                        () -> printer.print("case: "));
+        printSuffix(n.getCommands(), false);
+        printer.print("\n");
     }
 
     @Override
@@ -1629,6 +1667,52 @@ public class DefaultPrettyPrinterVisitor implements VoidVisitor<Void> {
             printList(n.getNewObjects(), ", ");
         }
         printer.print(";\n");
+    }
+
+    @Override
+    public void visit(JmlProofObtainStmt n, Void arg) {
+        printOrphanCommentsBeforeThisChildNode(n);
+        printer.print("obtain ");
+        if (n.getType() != null) {
+            n.getType().accept(this, arg);
+            printer.print(" ");
+        }
+        if (n.getVar() != null) {
+            n.getVar().accept(this, arg);
+        }
+        if (n.getKind() != null) {
+            printer.print(" ");
+            printer.print(n.getKind().jmlSymbol());
+            n.getValue().ifPresent(it -> {
+                printer.print(" ");
+                it.accept(this, arg);
+            });
+        }
+        printSuffix(n.getSuffix());
+    }
+
+    private void printSuffix(NodeList<JmlProofStmt> suffix) {
+        printSuffix(suffix, true);
+    }
+
+    private void printSuffix(NodeList<JmlProofStmt> suffix, boolean withBy) {
+        if (suffix.isEmpty()) printer.print(";");
+        else {
+            if (withBy) printer.print(" \\by ");
+            if (suffix.size() == 1) {
+                printer.indent().println();
+                suffix.getFirst().accept(this, null);
+                printer.unindent();
+                return;
+            }
+            printer.print("{");
+            printer.indent();
+            for (var stmt : suffix) {
+                printer.println();
+                stmt.accept(this, null);
+            }
+            printer.unindent().println().print("}");
+        }
     }
 
     @Override

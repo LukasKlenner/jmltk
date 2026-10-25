@@ -16,6 +16,7 @@ import com.github.javaparser.ast.jml.clauses.*;
 import com.github.javaparser.ast.jml.doc.*;
 import com.github.javaparser.ast.jml.doc.JmlDoc;
 import com.github.javaparser.ast.jml.expr.*;
+import com.github.javaparser.ast.jml.proof.*;
 import com.github.javaparser.ast.jml.stmt.*;
 import com.github.javaparser.ast.key.*;
 import com.github.javaparser.ast.key.sv.*;
@@ -332,6 +333,12 @@ public interface VoidVisitor<A> {
 
     void visit(JmlGhostStmt n, A arg);
 
+    void visit(JmlProofCmdStmt n, A arg);
+
+    void visit(JmlProofArg n, A arg);
+
+    void visit(JmlProofCaseStmt n, A arg);
+
     void visit(JmlMethodDeclaration n, A arg);
 
     void visit(JmlBinaryInfixExpr n, A arg);
@@ -363,4 +370,6 @@ public interface VoidVisitor<A> {
     void visit(KeyMarkerStatement n, A arg);
 
     void visit(JmlInfFlowClause n, A arg);
+
+    void visit(JmlProofObtainStmt n, A arg);
 }
