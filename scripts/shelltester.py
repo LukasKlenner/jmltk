@@ -15,7 +15,42 @@ import subprocess
 import sys
 import tempfile
 import os
+import shutil
 from pathlib import Path
+
+
+def setup_utf8_stdio() -> None:
+    """Accept Unicode on stdout/stderr regardless of the console encoding.
+
+    The Windows console (and piped output) defaults to the ANSI codepage
+    (e.g. cp1252), which cannot encode the emoji/checkmark markers used in
+    the output and would raise UnicodeEncodeError.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+def resolve_windows_executable(command: str) -> str:
+    """Give cmd.exe the explicit executable name on Windows.
+
+    The test files invoke the installed CLI as ``bin/jmltk`` (the POSIX start
+    script name). installDist also generates ``bin/jmltk.bat`` on Windows, and
+    that is the variant cmd.exe can execute. A plain ``shutil.which`` lookup is
+    not enough here: it returns the bare ``bin/jmltk`` file because that file
+    exists too, after which cmd.exe fails to run a shell script without stdout.
+    """
+    if os.name != 'nt':
+        return command
+    head, sep, tail = command.partition(' ')
+    # Prefer the platform start scripts over the bare POSIX script.
+    for ext in ('.bat', '.cmd', '.exe'):
+        resolved = shutil.which(os.path.normpath(head + ext))
+        if resolved is not None:
+            return resolved + (sep + tail if sep else '')
+    return command
 
 
 def parse_test_file(filepath: str) -> tuple[list[str], str, bool]:
@@ -25,7 +60,7 @@ def parse_test_file(filepath: str) -> tuple[list[str], str, bool]:
     Returns:
         Tuple of (command_lines, expected_output, ignore_stderr)
     """
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Find the frontmatter between --- markers
@@ -68,25 +103,29 @@ def parse_test_file(filepath: str) -> tuple[list[str], str, bool]:
     return command_lines, expected_output, ignore_stderr
 
 
-def run_command(command_lines: list[str], ignore_stderr: bool = False) -> str:
-    """Execute the command and return stdout."""
+def run_command(command_lines: list[str], ignore_stderr: bool = False) -> tuple[str, int, str]:
+    """Execute the command and return (stdout, exit code, raw stderr)."""
     # Join command lines - each line after 'run:' could be arguments or continuation
     full_command = '\n'.join(command_lines)
-    
-    # Execute using shell
+
+    # Execute using shell (cmd.exe /c on Windows, /bin/sh elsewhere). Decode the
+    # output as UTF-8: the CLI is a Java 21 process and the expected fixtures are
+    # UTF-8, while the locale codec on Windows would be cp1252.
     result = subprocess.run(
-        full_command,
+        resolve_windows_executable(full_command),
         shell=True,
         capture_output=True,
-        text=True
+        text=True,
+        encoding='utf-8',
+        errors='replace'
     )
-    
+
     # Return stdout (and optionally stderr) for comparison
     output = result.stdout
     if not ignore_stderr and result.stderr:
         output += result.stderr
-    
-    return output.strip()
+
+    return output.strip(), result.returncode, result.stderr.strip()
 
 
 def collect_test_files(args: list[str]) -> list[Path]:
@@ -123,7 +162,7 @@ def run_single_test(filepath: Path) -> tuple[bool, str]:
         return False, str(e)
     
     try:
-        actual = run_command(command_lines, ignore_stderr)
+        actual, returncode, stderr = run_command(command_lines, ignore_stderr)
     except Exception as e:
         return False, f"Command execution failed: {e}"
     
@@ -132,13 +171,13 @@ def run_single_test(filepath: Path) -> tuple[bool, str]:
     else:
         # Write actual output to file beside the test file
         actual_path = filepath.with_suffix(filepath.suffix + ".actual")
-        actual_path.write_text(actual)
+        actual_path.write_text(actual, encoding='utf-8')
         
         # Use diff for better output visualization
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.expected', delete=False) as exp_file:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.expected', encoding='utf-8', delete=False) as exp_file:
             exp_file.write(expected)
             exp_path = exp_file.name
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.actual', delete=False) as act_file:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.actual', encoding='utf-8', delete=False) as act_file:
             act_file.write(actual)
             act_path = act_file.name
         
@@ -147,17 +186,24 @@ def run_single_test(filepath: Path) -> tuple[bool, str]:
             diff_result = subprocess.run(
                 ['diff', '-u', exp_path, act_path],
                 capture_output=True,
-                text=True
+                text=True,
+                encoding='utf-8',
+                errors='replace'
             )
             diff_output = diff_result.stdout
         finally:
             os.unlink(exp_path)
             os.unlink(act_path)
         
-        return False, f"FAILED\n   Actual output written to: {actual_path}\n   Diff:\n" + '\n'.join(f"   {line}" for line in diff_output.split('\n'))
+        message = f"FAILED (exit code {returncode})"
+        if stderr:
+            message += "\n" + '\n'.join(f"   stderr: {line}" for line in stderr.split('\n'))
+        message += f"\n   Actual output written to: {actual_path}\n   Diff:\n" + '\n'.join(f"   {line}" for line in diff_output.split('\n'))
+        return False, message
 
 
 def main():
+    setup_utf8_stdio()
     if len(sys.argv) < 2:
         print("Usage: shelltester.py <test_file|directory> [test_file|directory ...]")
         print("\nTest file format:")
@@ -181,7 +227,7 @@ def main():
     for filepath in test_files:
         # Skip files that don't look like test files (no --- header)
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, 'r', encoding='utf-8') as f:
                 first_line = f.readline().strip()
                 if not first_line.startswith('---'):
                     continue
