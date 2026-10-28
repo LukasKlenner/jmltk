@@ -804,6 +804,12 @@ TOKEN :
 | <CREATE_OBJECT: "#create-object" >
 | <LENGTHREF: "#length-reference" >
 | <RESULTARROW: "result->"> // $result =
+| <TRACEDMETHODCALL: "#traced-method-call" >
+| <EVALUATESWITCHARG: "#evaluate-switch-arg" >
+| <TRACEDSWITCHSTATEMENT: "#traced-switch-statement" >
+| <TRACEDTHROW: "#traced-throw" >
+| <TRACEDINITARRAYCREATION: "#traced-init-array-creation" >
+| <EVALUATEARRAYDIMENSIONS: "#evaluate-array-dimensions" >
 }
 
 /* LITERALS */
@@ -8349,6 +8355,7 @@ KeyMetaConstruct KeyMetaConstructStatement() :
     KeyJumpLabelSV innerLabel=null, outerLabel=null;
     NodeList<Expression> loopInit;
     KeyMetaConstruct ret;
+    KeyProgramVariableSV finallyBlock = null;
 }
 {
   (
@@ -8437,6 +8444,40 @@ KeyMetaConstruct KeyMetaConstructStatement() :
   |
         <REATTACHLOOPINVARIANT> {begin=token();} "(" loopStat = WhileStatement() ")" ";"
         { ret =  new KeyMetaConstruct(range(begin, token()), begin, loopStat); }
+  |
+        "#traced-method-call" {begin=token();} "("
+            [  LOOKAHEAD(2) sv = VariableSV() ","]
+            [  LOOKAHEAD(2) execsv = ExecutionContextSV() ","]
+            methRef = PrimaryExpression()
+        ")" ";"
+        {
+            ret =  new KeyMetaConstruct(range(begin, token()), begin, methRef, sv, execsv);
+        }
+  |
+        "#traced-init-array-creation" {begin=token();} "(" sv = VariableSV() "," consRef = ExpressionSV() ")" ";"
+        {
+            ret =  new KeyMetaConstruct(range(begin, token()), begin, consRef, sv);
+        }
+  |
+        "#evaluate-array-dimensions" {begin=token();} "(" methRef = Expression() ")" ";"
+        {
+            ret =  new KeyMetaConstruct(range(begin, token()), begin, methRef);
+        }
+  |
+        "#evaluate-switch-arg" {begin=token();} "(" stat = Statement() ")" ";"
+        {
+            ret =  new KeyMetaConstruct(range(begin, token()), begin, stat);
+        }
+  |
+        "#traced-switch-statement" {begin=token();} "(" stat = Statement() ")" ";"
+        {
+            ret =  new KeyMetaConstruct(range(begin, token()), begin, stat);
+        }
+  |
+	   "#traced-throw" {begin=token();} "(" sv = VariableSV() "," [ LOOKAHEAD(2) finallyBlock = VariableSV() "," ] stat = Statement() ")" ";"
+        {
+            ret =  new KeyMetaConstruct(range(begin, token()), begin, stat, sv, finallyBlock);
+        }
   )
   { return ret; }
 }
